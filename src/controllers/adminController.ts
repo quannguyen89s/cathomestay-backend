@@ -184,6 +184,28 @@ export const updateBookingStatus = async (
   }
 };
 
+// @desc   Delete a booking (admin only)
+// @route  DELETE /api/admin/bookings/:id
+export const deleteBooking = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const booking = await Booking.findByIdAndDelete(req.params.id);
+    if (!booking) {
+      res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy đặt phòng" });
+      return;
+    }
+
+    res.json({ success: true, message: "Xóa đặt phòng thành công" });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Lỗi server";
+    res.status(500).json({ success: false, message });
+  }
+};
+
 // @desc   Get all homestays (admin - includes unavailable)
 // @route  GET /api/admin/homestays
 export const getAllHomestays = async (
