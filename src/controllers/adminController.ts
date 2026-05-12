@@ -17,6 +17,14 @@ import {
   type BookingQueryOptions,
 } from "../services/bookingFilterService.js";
 
+/**
+ * @types/express v5 widens req.params values to `string | string[]`.
+ * This helper always returns a plain `string` so typed helpers like
+ * buildBookingDbQuery (which expect `string`) remain type-safe.
+ */
+const paramId = (p: string | string[] | undefined): string =>
+  Array.isArray(p) ? (p[0] ?? "") : (p ?? "");
+
 // @desc   Get dashboard stats
 // @route  GET /api/admin/stats
 export const getStats = async (
@@ -186,7 +194,7 @@ export const deleteBooking = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = paramId(req.params.id);
 
     // Validate ObjectId format before hitting the database so Mongoose never
     // throws a CastError (which would produce a confusing 500 response).
@@ -368,13 +376,14 @@ export const getHomestayBookings = async (
   try {
     const opts = req.query as BookingQueryOptions;
 
-    const homestay = await Homestay.findById(req.params.id).select("_id pricing");
+    const homestayId = paramId(req.params.id);
+    const homestay = await Homestay.findById(homestayId).select("_id pricing");
     if (!homestay) {
       res.status(404).json({ success: false, message: "Không tìm thấy homestay" });
       return;
     }
 
-    const dbQuery = buildBookingDbQuery(req.params.id, opts);
+    const dbQuery = buildBookingDbQuery(homestayId, opts);
     const docs = await Booking.find(dbQuery)
       .populate("userId", "name phone email role")
       .populate("createdBy", "name email role")
@@ -421,13 +430,14 @@ export const exportHomestayBookings = async (
   try {
     const opts = { ...req.query, limit: "10000" } as BookingQueryOptions;
 
-    const homestay = await Homestay.findById(req.params.id).select("_id title pricing");
+    const homestayId = paramId(req.params.id);
+    const homestay = await Homestay.findById(homestayId).select("_id title pricing");
     if (!homestay) {
       res.status(404).json({ success: false, message: "Không tìm thấy homestay" });
       return;
     }
 
-    const dbQuery = buildBookingDbQuery(req.params.id, opts);
+    const dbQuery = buildBookingDbQuery(homestayId, opts);
     const docs = await Booking.find(dbQuery)
       .populate("userId", "name phone email role")
       .populate("createdBy", "name email role")

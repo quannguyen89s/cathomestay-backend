@@ -160,11 +160,12 @@ function normalizeLegacyBooking(ret: Record<string, unknown>): void {
   if (ret.customerInfo == null) ret.customerInfo = { name: "", phone: "", email: "" };
 }
 
-const sharedTransform = (
-  _doc: unknown,
-  ret: Record<string, unknown>,
-): Record<string, unknown> => {
-  normalizeLegacyBooking(ret);
+// Mongoose's transform signature is (doc: any, ret: any) => any.
+// Using `any` here is intentional — stricter types cause a TS2322 under
+// strictFunctionTypes because the library's own overload uses `any`.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const sharedTransform = (_doc: any, ret: any): any => {
+  normalizeLegacyBooking(ret as Record<string, unknown>);
   return ret;
 };
 
