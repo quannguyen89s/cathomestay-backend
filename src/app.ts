@@ -26,19 +26,52 @@ if (!fs.existsSync(uploadsDir)) {
 const app = express();
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
+// Build a Set of allowed origins. Normalise each entry to lowercase and also
+// add the www ↔ non-www counterpart so that both variants always work.
+const buildAllowedSet = (origins: readonly string[]): Set<string> => {
+  const set = new Set<string>();
+  for (const o of origins) {
+    const norm = o.trim().toLowerCase();
+    set.add(norm);
+    // Add www ↔ non-www mirror
+    try {
+      const url = new URL(norm);
+      if (url.hostname.startsWith("www.")) {
+        url.hostname = url.hostname.slice(4);
+      } else {
+        url.hostname = `www.${url.hostname}`;
+      }
+      set.add(url.toString().replace(/\/$/, "")); // strip trailing slash
+    } catch {
+      // not a parseable URL (e.g. localhost) — skip mirroring
+    }
+  }
+  return set;
+};
+
+const ALLOWED_ORIGINS_SET = buildAllowedSet(env.ALLOWED_ORIGINS);
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || env.ALLOWED_ORIGINS.includes(origin)) {
+      // Allow server-to-server requests (no Origin header)
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      if (ALLOWED_ORIGINS_SET.has(origin.toLowerCase())) {
         callback(null, true);
       } else {
-        callback(new Error("Not allowed by CORS"));
+        console.warn(`[CORS] Blocked origin: ${origin}`);
+        callback(new Error(`CORS: origin ${origin} not allowed`));
       }
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
-console.log(env.ALLOWED_ORIGINS);
+
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -59,7 +92,8 @@ app.get("/api/health", (_req, res) => {
 });
 
 // ── 404 handler ───────────────────────────────────────────────────────────────
-app.use((_req, res) => {
+app.use((req, res) => {
+  console.warn(`[404] ${req.method} ${req.originalUrl}`);
   res.status(404).json({ success: false, message: "Route không tồn tại" });
 });
 
@@ -67,7 +101,7 @@ app.use((_req, res) => {
 app.use(
   (
     err: unknown,
-    _req: express.Request,
+    req: express.Request,
     res: express.Response,
     _next: express.NextFunction,
   ) => {
@@ -77,7 +111,7 @@ app.use(
     }
     const message =
       err instanceof Error ? err.message : "Lỗi server không xác định";
-    console.error("[ERROR]", err);
+    console.error(`[ERROR] ${req.method} ${req.originalUrl}:`, err);
     sendError(res, message, 500);
   },
 );
