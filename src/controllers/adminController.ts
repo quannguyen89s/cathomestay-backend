@@ -186,15 +186,29 @@ export const deleteBooking = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const booking = await Booking.findByIdAndDelete(req.params.id);
+    const { id } = req.params;
+
+    // Validate ObjectId format before hitting the database so Mongoose never
+    // throws a CastError (which would produce a confusing 500 response).
+    if (!id || !/^[a-f\d]{24}$/i.test(id)) {
+      res.status(400).json({ success: false, message: "ID đặt phòng không hợp lệ" });
+      return;
+    }
+
+    // findByIdAndDelete only needs the _id — no ownership or createdBy check.
+    // Admins can delete any booking regardless of who created it or whether the
+    // booking has a userId / customerInfo / createdBy field.
+    const booking = await Booking.findByIdAndDelete(id);
+
     if (!booking) {
-      res.status(404).json({ success: false, message: "Không tìm thấy đặt phòng" });
+      res.status(404).json({ success: false, message: "Không tìm thấy đặt phòng (có thể đã bị xóa trước đó)" });
       return;
     }
 
     res.json({ success: true, message: "Xóa đặt phòng thành công" });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Lỗi server";
+    console.error("[deleteBooking] error:", error);
     res.status(500).json({ success: false, message });
   }
 };
