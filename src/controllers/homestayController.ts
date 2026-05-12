@@ -284,8 +284,8 @@ export const getBookedSlots = async (req: Request, res: Response): Promise<void>
     const endOfDay = new Date(`${date}T23:59:59+07:00`);
 
     const bookings = await Booking.find({
-      homestay: req.params.id,
-      status: "confirmed",
+      homestayId: req.params.id,
+      status: { $in: ["pending", "confirmed"] },
       checkIn: { $lt: endOfDay },
       checkOut: { $gt: startOfDay },
     }).select("checkIn checkOut");

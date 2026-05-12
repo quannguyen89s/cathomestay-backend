@@ -9,6 +9,13 @@ import {
   calcExtraGuestFee,
 } from "../utils/pricingUtils.js";
 import { generateBookingExcel } from "../utils/excelExport.js";
+import {
+  buildBookingDbQuery,
+  filterBookingRows,
+  sortBookingRows,
+  paginateRows,
+  type BookingQueryOptions,
+} from "../services/bookingFilterService.js";
 
 // @desc   Get dashboard stats
 // @route  GET /api/admin/stats
@@ -88,9 +95,7 @@ export const updateUserRole = async (
     );
 
     if (!user) {
-      res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy người dùng" });
+      res.status(404).json({ success: false, message: "Không tìm thấy người dùng" });
       return;
     }
 
@@ -110,9 +115,7 @@ export const deleteUser = async (
   try {
     const user = await User.findByIdAndDelete(req.params.id);
     if (!user) {
-      res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy người dùng" });
+      res.status(404).json({ success: false, message: "Không tìm thấy người dùng" });
       return;
     }
     res.json({ success: true, message: "Xóa người dùng thành công" });
@@ -152,9 +155,7 @@ export const updateBookingStatus = async (
     const validStatuses = ["pending", "confirmed", "cancelled", "completed"];
 
     if (!validStatuses.includes(status)) {
-      res
-        .status(400)
-        .json({ success: false, message: "Trạng thái không hợp lệ" });
+      res.status(400).json({ success: false, message: "Trạng thái không hợp lệ" });
       return;
     }
 
@@ -167,17 +168,11 @@ export const updateBookingStatus = async (
       .populate("homestayId", "title location city images price");
 
     if (!booking) {
-      res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy đặt phòng" });
+      res.status(404).json({ success: false, message: "Không tìm thấy đặt phòng" });
       return;
     }
 
-    res.json({
-      success: true,
-      message: "Cập nhật trạng thái thành công",
-      booking,
-    });
+    res.json({ success: true, message: "Cập nhật trạng thái thành công", booking });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Lỗi server";
     res.status(500).json({ success: false, message });
@@ -193,9 +188,7 @@ export const deleteBooking = async (
   try {
     const booking = await Booking.findByIdAndDelete(req.params.id);
     if (!booking) {
-      res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy đặt phòng" });
+      res.status(404).json({ success: false, message: "Không tìm thấy đặt phòng" });
       return;
     }
 
@@ -244,15 +237,11 @@ export const createAdminBooking = async (
     } = req.body;
 
     if (!homestayId || !checkIn || !checkOut || !guests) {
-      res
-        .status(400)
-        .json({ success: false, message: "Thiếu thông tin bắt buộc" });
+      res.status(400).json({ success: false, message: "Thiếu thông tin bắt buộc" });
       return;
     }
     if (!["pending", "confirmed", "cancelled"].includes(status)) {
-      res
-        .status(400)
-        .json({ success: false, message: "Trạng thái không hợp lệ" });
+      res.status(400).json({ success: false, message: "Trạng thái không hợp lệ" });
       return;
     }
     if (!userId) {
@@ -261,8 +250,7 @@ export const createAdminBooking = async (
       if (!guestName || !guestPhone) {
         res.status(400).json({
           success: false,
-          message:
-            "Khi không chọn user có sẵn, cần nhập tên và số điện thoại khách",
+          message: "Khi không chọn user có sẵn, cần nhập tên và số điện thoại khách",
         });
         return;
       }
@@ -270,9 +258,7 @@ export const createAdminBooking = async (
 
     const homestay = await Homestay.findById(homestayId);
     if (!homestay) {
-      res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy homestay" });
+      res.status(404).json({ success: false, message: "Không tìm thấy homestay" });
       return;
     }
 
@@ -280,12 +266,7 @@ export const createAdminBooking = async (
     const checkOutDate = new Date(checkOut);
 
     if (checkInDate >= checkOutDate) {
-      res
-        .status(400)
-        .json({
-          success: false,
-          message: "Thời gian trả phòng phải sau nhận phòng",
-        });
+      res.status(400).json({ success: false, message: "Thời gian trả phòng phải sau nhận phòng" });
       return;
     }
 
@@ -304,12 +285,7 @@ export const createAdminBooking = async (
       $or: [{ checkIn: { $lt: checkOutDate }, checkOut: { $gt: checkInDate } }],
     });
     if (conflicting) {
-      res
-        .status(400)
-        .json({
-          success: false,
-          message: "Homestay đã được đặt trong khoảng thời gian này",
-        });
+      res.status(400).json({ success: false, message: "Homestay đã được đặt trong khoảng thời gian này" });
       return;
     }
 
@@ -322,11 +298,7 @@ export const createAdminBooking = async (
 
     let basePrice: number;
     if (homestay.pricing && homestay.pricing.length > 0) {
-      const result = calculatePriceWithRules(
-        checkInDate,
-        hours,
-        homestay.pricing,
-      );
+      const result = calculatePriceWithRules(checkInDate, hours, homestay.pricing);
       basePrice = result ? result.basePrice : homestay.price;
     } else {
       const nights = Math.ceil(hours / 24) || 1;
@@ -338,9 +310,7 @@ export const createAdminBooking = async (
 
     // Admin may override the final price
     const finalPrice =
-      overridePrice !== undefined &&
-      overridePrice !== null &&
-      overridePrice !== ""
+      overridePrice !== undefined && overridePrice !== null && overridePrice !== ""
         ? Number(overridePrice)
         : originalPrice;
 
@@ -363,19 +333,12 @@ export const createAdminBooking = async (
     });
 
     const populated = await booking.populate([
-      {
-        path: "homestayId",
-        select: "title location images price pricing city",
-      },
+      { path: "homestayId", select: "title location images price pricing city" },
       { path: "userId", select: "name email phone" },
       { path: "createdBy", select: "name email" },
     ]);
 
-    res.status(201).json({
-      success: true,
-      message: "Tạo đặt phòng thành công",
-      booking: populated,
-    });
+    res.status(201).json({ success: true, message: "Tạo đặt phòng thành công", booking: populated });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Lỗi server";
     res.status(500).json({ success: false, message });
@@ -389,117 +352,35 @@ export const getHomestayBookings = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const {
-      page = "1",
-      limit = "10",
-      status,
-      sortBy = "createdAt",
-      order = "desc",
-      from,
-      to,
-      comboType,
-      customerName,
-      phone,
-    } = req.query;
+    const opts = req.query as BookingQueryOptions;
 
-    const homestay = await Homestay.findById(req.params.id).select(
-      "_id pricing",
-    );
+    const homestay = await Homestay.findById(req.params.id).select("_id pricing");
     if (!homestay) {
-      res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy homestay" });
+      res.status(404).json({ success: false, message: "Không tìm thấy homestay" });
       return;
     }
 
-    const dbQuery: Record<string, unknown> = { homestayId: req.params.id };
-    if (status && typeof status === "string") dbQuery.status = status;
-
-    if (from || to) {
-      dbQuery.checkIn = {};
-      if (from && typeof from === "string")
-        (dbQuery.checkIn as Record<string, Date>).$gte = new Date(from);
-      if (to && typeof to === "string")
-        (dbQuery.checkIn as Record<string, Date>).$lte = new Date(to);
-    }
-
+    const dbQuery = buildBookingDbQuery(req.params.id, opts);
     const docs = await Booking.find(dbQuery)
       .populate("userId", "name phone email role")
       .populate("createdBy", "name email role")
       .sort({ createdAt: -1 });
 
-    let rows = docs.filter((b) => {
-      const userObj = b.userId as unknown as { name?: string; phone?: string };
-      const cName = (b.customerInfo?.name || userObj?.name || "").toLowerCase();
-      const cPhone = (
-        b.customerInfo?.phone ||
-        userObj?.phone ||
-        ""
-      ).toLowerCase();
-
-      const matchName =
-        customerName && typeof customerName === "string"
-          ? cName.includes(customerName.toLowerCase())
-          : true;
-      const matchPhone =
-        phone && typeof phone === "string"
-          ? cPhone.includes(phone.toLowerCase())
-          : true;
-
-      return matchName && matchPhone;
-    });
-
-    if (
-      comboType &&
-      typeof comboType === "string" &&
-      ["hourly", "overnight", "daynight"].includes(comboType)
-    ) {
-      rows = rows.filter((b) => {
-        const hours =
-          b.hours || calcHours(new Date(b.checkIn), new Date(b.checkOut));
-        const matched = calculatePriceWithRules(
-          new Date(b.checkIn),
-          hours,
-          homestay.pricing || [],
-        );
-        return matched?.ruleType === comboType;
-      });
-    }
-
-    const sortFieldMap: Record<
-      string,
-      "checkIn" | "checkOut" | "createdAt" | "finalPrice"
-    > = {
-      checkIn: "checkIn",
-      checkOut: "checkOut",
-      createdAt: "createdAt",
-      finalPrice: "finalPrice",
-    };
-    const field = sortFieldMap[String(sortBy)] || "createdAt";
-    const asc = String(order).toLowerCase() === "asc";
-    rows.sort((a, b) => {
-      const av = (a as unknown as Record<string, number | string | Date>)[
-        field
-      ];
-      const bv = (b as unknown as Record<string, number | string | Date>)[
-        field
-      ];
-      if (av instanceof Date && bv instanceof Date) {
-        return asc ? av.getTime() - bv.getTime() : bv.getTime() - av.getTime();
-      }
-      if (typeof av === "number" && typeof bv === "number") {
-        return asc ? av - bv : bv - av;
-      }
-      return asc
-        ? String(av).localeCompare(String(bv))
-        : String(bv).localeCompare(String(av));
-    });
-
-    const pageNum = Math.max(1, Number(page) || 1);
-    const limitNum = Math.max(1, Number(limit) || 10);
-    const total = rows.length;
-    const start = (pageNum - 1) * limitNum;
-    const paged = rows.slice(start, start + limitNum);
+    const filtered = filterBookingRows(
+      docs as Parameters<typeof filterBookingRows>[0],
+      opts,
+      homestay.pricing || [],
+    );
+    const sorted = sortBookingRows(
+      filtered as Parameters<typeof sortBookingRows>[0],
+      opts.sortBy,
+      opts.order,
+    );
+    const { paged, total, pageNum, limitNum } = paginateRows(
+      sorted,
+      opts.page,
+      opts.limit,
+    );
 
     res.json({
       success: true,
@@ -524,128 +405,50 @@ export const exportHomestayBookings = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const {
-      page = "1",
-      limit = "10000",
-      status,
-      sortBy = "createdAt",
-      order = "desc",
-      from,
-      to,
-      comboType,
-      customerName,
-      phone,
-    } = req.query;
+    const opts = { ...req.query, limit: "10000" } as BookingQueryOptions;
 
-    const homestay = await Homestay.findById(req.params.id).select(
-      "_id title pricing",
-    );
+    const homestay = await Homestay.findById(req.params.id).select("_id title pricing");
     if (!homestay) {
-      res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy homestay" });
+      res.status(404).json({ success: false, message: "Không tìm thấy homestay" });
       return;
     }
 
-    const dbQuery: Record<string, unknown> = { homestayId: req.params.id };
-    if (status && typeof status === "string") dbQuery.status = status;
-
-    if (from || to) {
-      dbQuery.checkIn = {};
-      if (from && typeof from === "string")
-        (dbQuery.checkIn as Record<string, Date>).$gte = new Date(from);
-      if (to && typeof to === "string")
-        (dbQuery.checkIn as Record<string, Date>).$lte = new Date(to);
-    }
-
+    const dbQuery = buildBookingDbQuery(req.params.id, opts);
     const docs = await Booking.find(dbQuery)
       .populate("userId", "name phone email role")
       .populate("createdBy", "name email role")
       .sort({ createdAt: -1 });
 
-    let rows = docs.filter((b) => {
-      const userObj = b.userId as unknown as { name?: string; phone?: string };
-      const cName = (b.customerInfo?.name || userObj?.name || "").toLowerCase();
-      const cPhone = (
-        b.customerInfo?.phone ||
-        userObj?.phone ||
-        ""
-      ).toLowerCase();
+    const filtered = filterBookingRows(
+      docs as Parameters<typeof filterBookingRows>[0],
+      opts,
+      homestay.pricing || [],
+    );
+    const sorted = sortBookingRows(
+      filtered as Parameters<typeof sortBookingRows>[0],
+      opts.sortBy,
+      opts.order,
+    );
 
-      const matchName =
-        customerName && typeof customerName === "string"
-          ? cName.includes(customerName.toLowerCase())
-          : true;
-      const matchPhone =
-        phone && typeof phone === "string"
-          ? cPhone.includes(phone.toLowerCase())
-          : true;
-
-      return matchName && matchPhone;
-    });
-
-    if (
-      comboType &&
-      typeof comboType === "string" &&
-      ["hourly", "overnight", "daynight"].includes(comboType)
-    ) {
-      rows = rows.filter((b) => {
-        const hours =
-          b.hours || calcHours(new Date(b.checkIn), new Date(b.checkOut));
-        const matched = calculatePriceWithRules(
-          new Date(b.checkIn),
-          hours,
-          homestay.pricing || [],
-        );
-        return matched?.ruleType === comboType;
-      });
-    }
-
-    const sortFieldMap: Record<
-      string,
-      "checkIn" | "checkOut" | "createdAt" | "finalPrice"
-    > = {
-      checkIn: "checkIn",
-      checkOut: "checkOut",
-      createdAt: "createdAt",
-      finalPrice: "finalPrice",
-    };
-    const field = sortFieldMap[String(sortBy)] || "createdAt";
-    const asc = String(order).toLowerCase() === "asc";
-    rows.sort((a, b) => {
-      const av = (a as unknown as Record<string, number | string | Date>)[
-        field
-      ];
-      const bv = (b as unknown as Record<string, number | string | Date>)[
-        field
-      ];
-      if (av instanceof Date && bv instanceof Date) {
-        return asc ? av.getTime() - bv.getTime() : bv.getTime() - av.getTime();
-      }
-      if (typeof av === "number" && typeof bv === "number") {
-        return asc ? av - bv : bv - av;
-      }
-      return asc
-        ? String(av).localeCompare(String(bv))
-        : String(bv).localeCompare(String(av));
-    });
-
-    // Generate Excel file
     const excelBuffer = await generateBookingExcel(
-      rows,
+      sorted,
       homestay.title || "Homestay",
+      homestay.pricing || [],
     );
 
-    // Set response headers
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    );
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="Booking-${homestay.title || "Report"}-${new Date().toISOString().split("T")[0]}.xlsx"`,
-    );
+    const safeTitle = (homestay.title || "Report")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9_-]/g, "-")
+      .replace(/-{2,}/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 50) || "Report";
 
+    const dateStamp = new Date().toISOString().split("T")[0];
+    const filename = `Booking-${safeTitle}-${dateStamp}.xlsx`;
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send(excelBuffer);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Lỗi server";

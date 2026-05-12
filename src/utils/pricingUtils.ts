@@ -6,11 +6,11 @@ export type { IPricingRule };
 // ── Duration ──────────────────────────────────────────────────────────────────
 
 /**
- * Total booking duration in hours, rounded up (min 1).
- * e.g. 2h 15min → 3h
+ * Total booking duration in hours, rounded up, minimum 1.
+ * e.g. 2h 15min → 3h; same formula as the frontend pricing.ts
  */
 export const calcHours = (checkIn: Date, checkOut: Date): number =>
-  Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60));
+  Math.max(1, Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60)));
 
 // ── Extra guest fee ───────────────────────────────────────────────────────────
 

@@ -2,11 +2,12 @@ import { Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import { AuthRequest } from "../middlewares/auth.js";
+import { env } from "../config/env.js";
 
 const generateToken = (id: string, role: string): string => {
-  return jwt.sign({ id, role }, process.env.JWT_SECRET || "secret", {
-    expiresIn: "7d",
-  });
+  return jwt.sign({ id, role }, env.JWT_SECRET, {
+    expiresIn: env.JWT_EXPIRE,
+  } as jwt.SignOptions);
 };
 
 // @desc   Register user
