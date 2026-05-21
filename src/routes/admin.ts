@@ -7,6 +7,7 @@ import {
   getAllBookings,
   updateBookingStatus,
   getBookingById,
+  updateBooking,
   deleteBooking,
   getAllHomestays,
   createAdminBooking,
@@ -31,6 +32,7 @@ router.delete("/users/:id", deleteUser);
 router.get("/bookings", getAllBookings);
 router.post("/bookings", createAdminBooking);
 router.get("/bookings/:id", getBookingById);
+router.put("/bookings/:id", updateBooking);
 router.put("/bookings/:id/status", updateBookingStatus);
 router.delete("/bookings/:id", deleteBooking);
 router.get("/homestays", getAllHomestays);

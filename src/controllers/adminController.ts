@@ -133,19 +133,67 @@ export const deleteUser = async (
   }
 };
 
-// @desc   Get all bookings (admin)
+// @desc   Get all bookings (admin) with pagination, status filter, and search
 // @route  GET /api/admin/bookings
 export const getAllBookings = async (
-  _req: AuthRequest,
+  req: AuthRequest,
   res: Response,
 ): Promise<void> => {
   try {
-    const bookings = await Booking.find()
-      .populate("userId", "name email phone")
-      .populate("homestayId", "title location city images price")
-      .sort({ createdAt: -1 });
+    const {
+      page   = "1",
+      limit  = "8",
+      status,
+      search,
+    } = req.query as Record<string, string | undefined>;
 
-    res.json({ success: true, bookings });
+    const pageNum  = Math.max(1, parseInt(page)  || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 8));
+    const skip     = (pageNum - 1) * limitNum;
+
+    const filter: Record<string, unknown> = {};
+
+    if (status && status !== "all") {
+      filter.status = status;
+    }
+
+    if (search?.trim()) {
+      const regex = new RegExp(search.trim(), "i");
+      const [matchingHomestays, matchingUsers] = await Promise.all([
+        Homestay.find({ title: regex }).select("_id").lean(),
+        User.find({ $or: [{ name: regex }, { email: regex }] }).select("_id").lean(),
+      ]);
+      const homestayIds = matchingHomestays.map((h) => h._id);
+      const userIds     = matchingUsers.map((u) => u._id);
+      filter.$or = [
+        { "customerInfo.name":  regex },
+        { "customerInfo.phone": regex },
+        { "customerInfo.email": regex },
+        ...(homestayIds.length ? [{ homestayId: { $in: homestayIds } }] : []),
+        ...(userIds.length     ? [{ userId:     { $in: userIds     } }] : []),
+      ];
+    }
+
+    const [bookings, total] = await Promise.all([
+      Booking.find(filter)
+        .populate("userId",    "name email phone")
+        .populate("homestayId", "title location city images price")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum),
+      Booking.countDocuments(filter),
+    ]);
+
+    res.json({
+      success: true,
+      bookings,
+      pagination: {
+        page:  pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Lỗi server";
     res.status(500).json({ success: false, message });
@@ -210,6 +258,137 @@ export const getBookingById = async (
     res.json({ success: true, booking });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Lỗi server";
+    res.status(500).json({ success: false, message });
+  }
+};
+
+// @desc   Update a booking (admin only)
+// @route  PUT /api/admin/bookings/:id
+export const updateBooking = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const id = paramId(req.params.id);
+    if (!id || !/^[a-f\d]{24}$/i.test(id)) {
+      res.status(400).json({ success: false, message: "ID đặt phòng không hợp lệ" });
+      return;
+    }
+
+    const booking = await Booking.findById(id);
+    if (!booking) {
+      res.status(404).json({ success: false, message: "Không tìm thấy đặt phòng" });
+      return;
+    }
+
+    const {
+      checkIn,
+      checkOut,
+      guests,
+      note,
+      adminNote,
+      status,
+      finalPrice: overridePrice,
+    } = req.body as {
+      checkIn?: string;
+      checkOut?: string;
+      guests?: number;
+      note?: string;
+      adminNote?: string;
+      status?: string;
+      finalPrice?: number | string;
+    };
+
+    // Validate status if provided
+    const validStatuses = ["pending", "confirmed", "cancelled", "completed"];
+    if (status && !validStatuses.includes(status)) {
+      res.status(400).json({ success: false, message: "Trạng thái không hợp lệ" });
+      return;
+    }
+
+    // Resolve effective dates and guest count (fall back to stored values)
+    const checkInDate  = checkIn  ? new Date(checkIn)  : new Date(booking.checkIn);
+    const checkOutDate = checkOut ? new Date(checkOut) : new Date(booking.checkOut);
+    const guestCount   = guests != null ? Number(guests) : booking.guests;
+
+    if (checkInDate >= checkOutDate) {
+      res.status(400).json({ success: false, message: "Thời gian trả phòng phải sau nhận phòng" });
+      return;
+    }
+
+    // Build the update patch
+    const patch: Record<string, unknown> = {};
+    if (checkIn)              patch.checkIn   = checkInDate;
+    if (checkOut)             patch.checkOut  = checkOutDate;
+    if (guests != null)       patch.guests    = guestCount;
+    if (note      !== undefined) patch.note      = note;
+    if (adminNote !== undefined) patch.adminNote = adminNote;
+    if (status)               patch.status    = status;
+
+    // Re-price whenever dates, guests, or an explicit override are present.
+    // The frontend always sends finalPrice equal to the combo-selected price so
+    // the backend honours that value and never auto-switches the combo.
+    const needsRepricing =
+      checkIn != null ||
+      checkOut != null ||
+      guests != null ||
+      (overridePrice !== undefined && overridePrice !== null && overridePrice !== "");
+
+    if (needsRepricing) {
+      const homestay = await Homestay.findById(booking.homestayId).select(
+        "pricing price maxGuests",
+      );
+
+      const hours = calcHours(checkInDate, checkOutDate);
+      patch.hours = hours;
+
+      if (homestay) {
+        let basePrice: number;
+        if (homestay.pricing && homestay.pricing.length > 0) {
+          const result = calculatePriceWithRules(checkInDate, hours, homestay.pricing);
+          basePrice = result ? result.basePrice : homestay.price;
+        } else {
+          const nights = Math.ceil(hours / 24) || 1;
+          basePrice = nights * homestay.price;
+        }
+
+        const extraGuestFee = calcExtraGuestFee(guestCount);
+
+        // If the frontend sent an explicit finalPrice (i.e. a combo was selected),
+        // trust it for originalPrice as well so the stored breakdown is consistent.
+        if (overridePrice !== undefined && overridePrice !== null && overridePrice !== "") {
+          const fp = Number(overridePrice);
+          // Original price = override minus extra-guest portion
+          patch.originalPrice = fp - extraGuestFee;
+          patch.extraGuestFee = extraGuestFee;
+          patch.finalPrice    = fp;
+          patch.totalPrice    = fp;
+        } else {
+          patch.originalPrice = basePrice;
+          patch.extraGuestFee = extraGuestFee;
+          patch.finalPrice    = basePrice + extraGuestFee;
+          patch.totalPrice    = basePrice + extraGuestFee;
+        }
+      } else if (overridePrice !== undefined && overridePrice !== null && overridePrice !== "") {
+        const fp = Number(overridePrice);
+        patch.finalPrice = fp;
+        patch.totalPrice = fp;
+      }
+    }
+
+    const updated = await Booking.findByIdAndUpdate(
+      id,
+      { $set: patch },
+      { new: true },
+    )
+      .populate("userId",    "name email phone")
+      .populate("homestayId", "title location city images price pricing maxGuests")
+      .populate("createdBy", "name email");
+
+    res.json({ success: true, message: "Cập nhật đặt phòng thành công", booking: updated });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Lỗi server";
+    console.error("[updateBooking] error:", error);
     res.status(500).json({ success: false, message });
   }
 };
