@@ -627,6 +627,91 @@ export const getHomestayBookings = async (
   }
 };
 
+// @desc   Get ALL occupying bookings for a homestay's calendar view
+// @route  GET /api/admin/homestays/:id/calendar-bookings
+//
+// Calendar must show every booking that occupies a time slot — regardless of
+// pagination, filters, or schema version. This endpoint exists because the
+// regular `getHomestayBookings` endpoint paginates and filters, which made
+// some bookings invisible on the calendar.
+//
+// Returns:
+//   - bookings with status "confirmed" or "pending"
+//   - bookings whose `status` field is missing / null (legacy records) —
+//     treated as "confirmed" for occupancy purposes
+//   - cancelled bookings are NEVER returned (they don't occupy slots)
+//
+// Optionally accepts ?from=YYYY-MM-DD&to=YYYY-MM-DD to narrow the range to
+// the currently visible month for better performance on large datasets.
+// When `from`/`to` are present, returns every booking that overlaps the
+// range (checkIn < to AND checkOut > from), so overnight bookings spanning
+// the range edges are still included.
+export const getHomestayCalendarBookings = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const homestayId = paramId(req.params.id);
+    if (!homestayId || !/^[a-f\d]{24}$/i.test(homestayId)) {
+      res.status(400).json({ success: false, message: "ID homestay không hợp lệ" });
+      return;
+    }
+
+    const homestay = await Homestay.findById(homestayId).select("_id");
+    if (!homestay) {
+      res.status(404).json({ success: false, message: "Không tìm thấy homestay" });
+      return;
+    }
+
+    const { from, to } = req.query as { from?: string; to?: string };
+
+    const filter: Record<string, unknown> = {
+      homestayId,
+      // Status filter — include legacy docs missing the status field
+      $or: [
+        { status: { $in: ["confirmed", "pending"] } },
+        { status: { $exists: false } },
+        { status: null },
+      ],
+    };
+
+    // Optional overlap window — booking overlaps [from, to] iff
+    //   checkIn < to AND checkOut > from
+    if (from || to) {
+      const overlap: Record<string, unknown>[] = [];
+      if (to) {
+        const toDate = new Date(to);
+        if (!isNaN(toDate.getTime())) {
+          overlap.push({ checkIn: { $lt: toDate } });
+        }
+      }
+      if (from) {
+        const fromDate = new Date(from);
+        if (!isNaN(fromDate.getTime())) {
+          overlap.push({ checkOut: { $gt: fromDate } });
+        }
+      }
+      if (overlap.length > 0) {
+        // Combine with the existing $or by AND-ing them under $and
+        const existingStatusOr = filter.$or;
+        delete filter.$or;
+        filter.$and = [{ $or: existingStatusOr }, ...overlap];
+      }
+    }
+
+    const bookings = await Booking.find(filter)
+      .populate("userId", "name phone email")
+      .select("_id checkIn checkOut status guests customerInfo userId homestayId hours adminNote note createdAt")
+      .sort({ checkIn: 1 });
+
+    res.json({ success: true, bookings });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Lỗi server";
+    console.error("[getHomestayCalendarBookings] error:", error);
+    res.status(500).json({ success: false, message });
+  }
+};
+
 // @desc   Export homestay bookings to Excel
 // @route  GET /api/admin/homestays/:id/export
 export const exportHomestayBookings = async (

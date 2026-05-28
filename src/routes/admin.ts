@@ -12,6 +12,7 @@ import {
   getAllHomestays,
   createAdminBooking,
   getHomestayBookings,
+  getHomestayCalendarBookings,
   exportHomestayBookings,
 } from "../controllers/adminController.js";
 import {
@@ -37,6 +38,7 @@ router.put("/bookings/:id/status", updateBookingStatus);
 router.delete("/bookings/:id", deleteBooking);
 router.get("/homestays", getAllHomestays);
 router.get("/homestays/:id/bookings", getHomestayBookings);
+router.get("/homestays/:id/calendar-bookings", getHomestayCalendarBookings);
 router.get("/homestays/:id/export", exportHomestayBookings);
 
 // Pricing templates (admin CRUD)
