@@ -289,6 +289,7 @@ export const updateBooking = async (
       adminNote,
       status,
       finalPrice: overridePrice,
+      customerInfo,
     } = req.body as {
       checkIn?: string;
       checkOut?: string;
@@ -297,6 +298,13 @@ export const updateBooking = async (
       adminNote?: string;
       status?: string;
       finalPrice?: number | string;
+      /**
+       * Booking-snapshot customer info. Editing this NEVER touches the
+       * linked User account — it only updates the per-booking fields
+       * (booking.customerInfo.{name,phone,email}). For walk-in bookings
+       * (no userId) this is the only source of customer info.
+       */
+      customerInfo?: { name?: string; phone?: string; email?: string };
     };
 
     // Validate status if provided
@@ -324,6 +332,23 @@ export const updateBooking = async (
     if (note      !== undefined) patch.note      = note;
     if (adminNote !== undefined) patch.adminNote = adminNote;
     if (status)               patch.status    = status;
+
+    // Customer-info snapshot. We deliberately use dot-notation field paths
+    // ($set: { "customerInfo.name": ..., ... }) so:
+    //   1. Only the keys actually sent are written — partial updates are safe.
+    //   2. The whole sub-document is never replaced, so legacy fields stay.
+    //   3. The User account is NEVER modified by this endpoint.
+    if (customerInfo && typeof customerInfo === "object") {
+      if (typeof customerInfo.name === "string") {
+        patch["customerInfo.name"] = customerInfo.name.trim();
+      }
+      if (typeof customerInfo.phone === "string") {
+        patch["customerInfo.phone"] = customerInfo.phone.trim();
+      }
+      if (typeof customerInfo.email === "string") {
+        patch["customerInfo.email"] = customerInfo.email.trim();
+      }
+    }
 
     // Re-price whenever dates, guests, or an explicit override are present.
     // The frontend always sends finalPrice equal to the combo-selected price so
