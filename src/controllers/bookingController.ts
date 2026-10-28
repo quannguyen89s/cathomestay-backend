@@ -3,6 +3,7 @@ import Booking from "../models/Booking.js";
 import Homestay from "../models/Homestay.js";
 import { AuthRequest } from "../middlewares/auth.js";
 import { calcHours, calculatePriceWithRules, calcExtraGuestFee } from "../utils/pricingUtils.js";
+import { createNotificationHelper } from "./notificationController.js";
 
 // @desc   Create booking
 // @route  POST /api/bookings
@@ -67,7 +68,7 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
 
     let basePrice: number;
     if (homestay.pricing && homestay.pricing.length > 0) {
-      const result = calculatePriceWithRules(checkInDate, hours, homestay.pricing);
+      const result = calculatePriceWithRules(checkInDate, hours, homestay.pricing, homestay.price);
       basePrice = result ? result.basePrice : homestay.price;
     } else {
       const nights = Math.ceil(hours / 24) || 1;
@@ -96,6 +97,16 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
       { path: "homestayId", select: "title location images price pricing city" },
       { path: "userId", select: "name email phone" },
     ]);
+
+    // Send notification to user
+    await createNotificationHelper({
+      userId: req.user!._id,
+      title: "Đặt phòng thành công",
+      message: `Bạn đã gửi yêu cầu đặt phòng "${homestay.title}". Đơn đặt phòng đang chờ xác nhận.`,
+      type: "booking_success",
+      link: "/dashboard",
+      metadata: { bookingId: booking._id, homestayId: homestay._id },
+    });
 
     res.status(201).json({
       success: true,
@@ -150,6 +161,16 @@ export const cancelBooking = async (req: AuthRequest, res: Response): Promise<vo
 
     booking.status = "cancelled";
     await booking.save();
+
+    // Send cancellation notification
+    await createNotificationHelper({
+      userId: req.user!._id,
+      title: "Hủy đặt phòng thành công",
+      message: "Đơn đặt phòng đã được hủy theo yêu cầu của bạn.",
+      type: "booking_cancelled",
+      link: "/dashboard",
+      metadata: { bookingId: booking._id },
+    });
 
     res.json({ success: true, message: "Hủy đặt phòng thành công", booking });
   } catch (error: unknown) {

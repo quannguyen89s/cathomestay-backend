@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import mongoSanitize from "express-mongo-sanitize";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -7,12 +9,14 @@ import fs from "fs";
 import { env } from "./config/env.js";
 import { ApiError } from "./utils/ApiError.js";
 import { sendError } from "./utils/response.js";
+import { globalLimiter } from "./middlewares/rateLimiter.js";
 
 import authRoutes from "./routes/auth.js";
 import homestayRoutes from "./routes/homestays.js";
 import bookingRoutes from "./routes/bookings.js";
 import adminRoutes from "./routes/admin.js";
 import pricingTemplateRoutes from "./routes/pricingTemplates.js";
+import notificationRoutes from "./routes/notifications.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +28,19 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 const app = express();
+
+// ── Security Headers & Protections ────────────────────────────────────────────
+app.disable("x-powered-by");
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }, // Allows static images to be served across origins
+    contentSecurityPolicy: false, // CSP is kept off so local dev/Cloudinary/Google assets load without friction
+  })
+);
+
+// ── Rate Limiting & NoSQL Sanitization ─────────────────────────────────────────
+app.use("/api", globalLimiter);
+app.use(mongoSanitize());
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 // Build a Set of allowed origins. Normalise each entry to lowercase and also
@@ -85,6 +102,7 @@ app.use("/api/homestays", homestayRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/pricing-templates", pricingTemplateRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", (_req, res) => {

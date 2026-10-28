@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import Homestay from "../models/Homestay.js";
 import Booking from "../models/Booking.js";
 import { AuthRequest } from "../middlewares/auth.js";
+import { createNotificationHelper } from "./notificationController.js";
 import {
   calcHours,
   calculatePriceWithRules,
@@ -228,6 +229,40 @@ export const updateBookingStatus = async (
       return;
     }
 
+    // Trigger notification if linked to a user
+    const targetUserId = (booking.userId as any)?._id || booking.userId;
+    if (targetUserId) {
+      const homestayTitle = (booking.homestayId as any)?.title || "homestay";
+      if (status === "confirmed") {
+        await createNotificationHelper({
+          userId: targetUserId,
+          title: "Đơn đặt phòng đã được xác nhận!",
+          message: `Đơn đặt phòng của bạn tại "${homestayTitle}" đã được Quản trị viên duyệt xác nhận.`,
+          type: "booking_confirmed",
+          link: "/dashboard",
+          metadata: { bookingId: booking._id },
+        });
+      } else if (status === "cancelled") {
+        await createNotificationHelper({
+          userId: targetUserId,
+          title: "Đơn đặt phòng đã bị hủy",
+          message: `Đơn đặt phòng của bạn tại "${homestayTitle}" đã bị hủy bởi Quản trị viên.`,
+          type: "booking_cancelled",
+          link: "/dashboard",
+          metadata: { bookingId: booking._id },
+        });
+      } else if (status === "completed") {
+        await createNotificationHelper({
+          userId: targetUserId,
+          title: "Kỳ nghỉ hoàn thành",
+          message: `Kỳ nghỉ tại "${homestayTitle}" đã hoàn thành. Cảm ơn bạn đã đồng hành cùng Cathomestay!`,
+          type: "booking_completed",
+          link: "/dashboard",
+          metadata: { bookingId: booking._id },
+        });
+      }
+    }
+
     res.json({ success: true, message: "Cập nhật trạng thái thành công", booking });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Lỗi server";
@@ -370,7 +405,7 @@ export const updateBooking = async (
       if (homestay) {
         let basePrice: number;
         if (homestay.pricing && homestay.pricing.length > 0) {
-          const result = calculatePriceWithRules(checkInDate, hours, homestay.pricing);
+          const result = calculatePriceWithRules(checkInDate, hours, homestay.pricing, homestay.price);
           basePrice = result ? result.basePrice : homestay.price;
         } else {
           const nights = Math.ceil(hours / 24) || 1;
@@ -551,7 +586,7 @@ export const createAdminBooking = async (
 
     let basePrice: number;
     if (homestay.pricing && homestay.pricing.length > 0) {
-      const result = calculatePriceWithRules(checkInDate, hours, homestay.pricing);
+      const result = calculatePriceWithRules(checkInDate, hours, homestay.pricing, homestay.price);
       basePrice = result ? result.basePrice : homestay.price;
     } else {
       const nights = Math.ceil(hours / 24) || 1;

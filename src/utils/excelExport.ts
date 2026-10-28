@@ -94,6 +94,11 @@ const resolveComboLabel = (
 
   const result = calculatePriceWithRules(checkInDate, hours, activeRules);
   if (!result) return "Theo giờ";
+  if (result.days && result.days > 0) {
+    return result.extraHours && result.extraHours > 0
+      ? `${result.days} ngày ${result.extraHours}h`
+      : `${result.days} ngày`;
+  }
 
   const { rule, ruleType } = result;
   const baseName =

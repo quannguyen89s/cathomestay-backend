@@ -18,7 +18,22 @@ export const env = {
   CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY ?? "",
   CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET ?? "",
 
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? "",
+
+  EMAIL_HOST: process.env.EMAIL_HOST ?? "smtp.gmail.com",
+  EMAIL_PORT: Number(process.env.EMAIL_PORT ?? 587),
+  EMAIL_SECURE: process.env.EMAIL_SECURE === "true",
+  EMAIL_USER: process.env.EMAIL_USER ?? "",
+  EMAIL_PASS: process.env.EMAIL_PASS ?? "",
+  EMAIL_FROM: process.env.EMAIL_FROM ?? "HomeStay Support <no-reply@homestay.vn>",
+
   ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGINS ?? "http://localhost:5173")
     .split(",")
     .map((o) => o.trim()),
 } as const;
+
+if (env.NODE_ENV === "production" && (env.JWT_SECRET === "secret" || env.JWT_SECRET.length < 16)) {
+  console.error(
+    "⚠️ [SECURITY WARNING]: JWT_SECRET đang sử dụng giá trị mặc định hoặc quá ngắn trong môi trường production! Hãy cấu hình một chuỗi ngẫu nhiên mạnh (>= 32 ký tự) trong .env để bảo vệ token."
+  );
+}

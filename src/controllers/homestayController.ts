@@ -19,6 +19,7 @@ export const getHomestays = async (req: Request, res: Response): Promise<void> =
       guests,
       page = "1",
       limit = "9",
+      sortBy = "default",
     } = req.query;
 
     const query: Record<string, unknown> = { isAvailable: true };
@@ -42,10 +43,19 @@ export const getHomestays = async (req: Request, res: Response): Promise<void> =
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
+    let sortObj: Record<string, 1 | -1> = { createdAt: -1 };
+    if (sortBy === "price_asc") {
+      sortObj = { price: 1, createdAt: -1 };
+    } else if (sortBy === "price_desc") {
+      sortObj = { price: -1, createdAt: -1 };
+    } else if (sortBy === "rating") {
+      sortObj = { rating: -1, createdAt: -1 };
+    }
+
     const [homestays, total] = await Promise.all([
       Homestay.find(query)
         .populate("createdBy", "name email")
-        .sort({ createdAt: -1 })
+        .sort(sortObj)
         .skip(skip)
         .limit(limitNum),
       Homestay.countDocuments(query),
