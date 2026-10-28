@@ -1,7 +1,7 @@
 # ==========================================
 # Stage 1: Build stage
 # ==========================================
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -19,7 +19,7 @@ RUN npm run build
 # ==========================================
 # Stage 2: Production runner
 # ==========================================
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
@@ -31,6 +31,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # Copy compiled files from builder
 COPY --from=builder /app/dist ./dist
+
+# Create uploads folder and grant permission to node user
+RUN mkdir -p /app/uploads && chown -R node:node /app
 
 # Run as non-root user for security
 USER node

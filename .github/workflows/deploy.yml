@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-and-test:
     name: Build & Verify TypeScript
@@ -15,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
@@ -37,14 +40,14 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
           script: |
-            echo " Đang cập nhật code Backend..."
+            echo "🚀 Đang cập nhật code Backend..."
             cd /var/www/cathomestay-backend
             git pull origin main
 
-            echo " Rebuilding Backend Docker container..."
+            echo "🐳 Rebuilding Backend Docker container..."
             cd /var/www
             docker compose up -d --build backend
 
-            echo " Dọn dẹp images cũ không dùng..."
+            echo "🧹 Dọn dẹp images cũ không dùng..."
             docker image prune -f
-            echo " Deploy Backend hoàn tất!"
+            echo "✅ Deploy Backend hoàn tất!"
